@@ -11,11 +11,35 @@ import { Calendar } from './pages/Calendar';
 import { Admin } from './pages/Admin';
 import { Login } from './pages/Login';
 
+import { motion } from 'motion/react';
+
+import { Logo } from './components/Logo';
+
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+    <div className="min-h-screen flex items-center justify-center bg-background p-10">
+      <motion.div 
+        animate={{ 
+          scale: [0.98, 1.02, 0.98],
+          opacity: [0.8, 1, 0.8]
+        }} 
+        transition={{ 
+          repeat: Infinity, 
+          duration: 3,
+          ease: "easeInOut"
+        }}
+        className="flex flex-col items-center gap-6"
+      >
+        <Logo size="md" />
+        <div className="w-8 h-1 bg-primary/10 rounded-full overflow-hidden mt-4">
+          <motion.div 
+            animate={{ x: [-20, 40] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+            className="w-4 h-full bg-primary"
+          />
+        </div>
+      </motion.div>
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;

@@ -7,6 +7,8 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { CURRENCIES } from '../lib/format';
 
+import { Logo } from '../components/Logo';
+
 export const Settings: React.FC = () => {
   const { user, logout, settings, updateSettings, updateProfileImage } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -574,12 +576,17 @@ export const Settings: React.FC = () => {
         </div>
       </motion.section>
 
-      <div className="text-center text-outline/40 pb-16 space-y-1">
-        <p className="text-xs font-bold tracking-widest uppercase">FreshKeep © 2024</p>
-        <div className="flex items-center justify-center gap-1">
-          <span className="w-1 h-1 bg-outline/20 rounded-full"></span>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Sempre fresco, sempre pronto</p>
-          <span className="w-1 h-1 bg-outline/20 rounded-full"></span>
+      <div className="text-center pb-16 space-y-3">
+        <div className="flex justify-center opacity-30 grayscale">
+          <Logo showText={false} size="sm" variant="dark" />
+        </div>
+        <div className="space-y-1 opacity-40">
+          <p className="text-xs font-bold tracking-widest uppercase text-outline">FreshKeep © 2024</p>
+          <div className="flex items-center justify-center gap-1">
+            <span className="w-1 h-1 bg-outline/20 rounded-full"></span>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline">Sempre fresco, sempre pronto</p>
+            <span className="w-1 h-1 bg-outline/20 rounded-full"></span>
+          </div>
         </div>
       </div>
     </div>

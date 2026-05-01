@@ -4,6 +4,8 @@ import { LogIn, AlertCircle, Mail, Lock, User as UserIcon, CheckCircle2, Chevron
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
+import { Logo } from '../components/Logo';
+
 export const Login: React.FC = () => {
   const { user, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } = useAuth();
   const navigate = useNavigate();
@@ -45,10 +47,19 @@ export const Login: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      await signInWithGoogle(false);
-      setSuccessMessage('Login realizado com sucesso!');
+      
+      // Detect if we are likely in a WebView/Mobile environment
+      const isWebView = /wv|WebView|iPhone|Android/i.test(navigator.userAgent);
+      
+      // If it's a mobile/WebView, prefer redirect immediately as popups often fail in APKs
+      if (isWebView) {
+        await signInWithGoogle(true);
+      } else {
+        await signInWithGoogle(false);
+        setSuccessMessage('Login realizado com sucesso!');
+      }
     } catch (err: any) {
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         try {
           await signInWithGoogle(true);
         } catch (redirErr: any) {
@@ -164,13 +175,13 @@ export const Login: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md text-center relative z-10"
       >
-        <div className="space-y-4 mb-8">
+        <div className="space-y-2 mb-8 flex flex-col items-center">
           <motion.div 
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            className="w-14 h-14 bg-primary rounded-2xl mx-auto flex items-center justify-center shadow-xl shadow-primary/30"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="mb-2"
           >
-            <span className="text-white text-2xl font-bold font-h1">F</span>
+            <Logo size="lg" />
           </motion.div>
           
           <div className="space-y-2">

@@ -4,6 +4,8 @@ import { Home, PlusSquare, Settings, ChevronLeft, User as UserIcon, Calendar, La
 import { useAuth } from './FirebaseProvider';
 import { cn } from '../lib/utils';
 
+import { Logo } from './Logo';
+
 export const Layout: React.FC = () => {
   const { user, settings } = useAuth();
   const location = useLocation();
@@ -22,22 +24,27 @@ export const Layout: React.FC = () => {
     <div className="flex flex-col min-h-screen bg-background">
       {/* Top App Bar */}
       <header className="fixed top-0 left-0 w-full z-50 bg-white/80 backdrop-blur-xl border-b border-outline-variant/10 h-16 flex justify-center">
-        <div className="w-full max-w-2xl px-5 flex justify-between items-center">
+        <div className="w-full max-w-2xl px-5 flex justify-between items-center h-full">
           <div className="flex items-center gap-3">
             {isSubPage && location.pathname !== '/' ? (
-              <NavLink to="/" className="p-2 -ml-2 hover:bg-surface-container-low rounded-full transition-all active:scale-90">
-                <ChevronLeft className="w-5 h-5 text-on-surface" />
-              </NavLink>
+              <div className="flex items-center gap-1">
+                <NavLink to="/" className="p-2 -ml-2 hover:bg-surface-container-low rounded-full transition-all active:scale-90">
+                  <ChevronLeft className="w-5 h-5 text-on-surface" />
+                </NavLink>
+                <div className="h-4 w-px bg-outline-variant/30 hidden sm:block mx-1"></div>
+                <h1 className="text-lg font-bold text-on-surface font-h1 tracking-tight truncate max-w-[120px] sm:max-w-none">
+                  {pageTitle}
+                </h1>
+              </div>
             ) : (
-              <div className="p-1.5 -ml-1.5">
-                 <div className="w-7 h-7 bg-primary rounded-lg shadow-md shadow-primary/20 flex items-center justify-center">
-                   <span className="text-white font-bold text-xs">F</span>
-                 </div>
+              <div className="flex items-center gap-2">
+                <Logo showText={false} size="sm" className="-ml-1" />
+                <div className="h-4 w-px bg-outline-variant/30 hidden sm:block mb-1"></div>
+                <h1 className="text-lg font-bold text-on-surface font-h1 tracking-tight hidden sm:block">
+                  {pageTitle}
+                </h1>
               </div>
             )}
-            <h1 className="text-lg font-bold text-on-surface font-h1 tracking-tight">
-              {pageTitle}
-            </h1>
           </div>
           
           <div className="flex items-center gap-3">

@@ -21,6 +21,8 @@ const DEFAULT_CATEGORY_ICONS: Record<string, React.ReactNode> = {
   'Outros': <Package className="w-4 h-4" />,
 };
 
+import { Logo } from '../components/Logo';
+
 export const Home: React.FC = () => {
   const { user, settings, isAdmin, requestPremium } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
@@ -319,8 +321,8 @@ export const Home: React.FC = () => {
           </div>
           
           <div className="flex flex-col md:flex-row gap-6 items-center">
-            <div className="w-16 h-16 bg-secondary/10 rounded-2xl flex items-center justify-center shrink-0">
-               <Package className="w-8 h-8 text-secondary" />
+            <div className="w-16 h-16 bg-secondary/5 rounded-2xl flex items-center justify-center shrink-0 p-1 border border-secondary/10 shadow-inner overflow-hidden">
+               <Logo showText={false} size="md" />
             </div>
             
             <div className="flex-1 text-center md:text-left space-y-1">
