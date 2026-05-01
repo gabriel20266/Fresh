@@ -16,9 +16,18 @@ import { motion } from 'motion/react';
 import { Logo } from './components/Logo';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
+  const [showRetry, setShowRetry] = React.useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) setShowRetry(true);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-10">
+    <div className="min-h-screen flex items-center justify-center bg-background p-10 flex-col gap-8">
       <motion.div 
         animate={{ 
           scale: [0.98, 1.02, 0.98],
@@ -40,6 +49,30 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
           />
         </div>
       </motion.div>
+
+      {showRetry && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center space-y-4"
+        >
+          <p className="text-xs text-outline font-medium">O carregamento está demorando mais que o esperado...</p>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => window.location.reload()}
+              className="text-[10px] font-black uppercase tracking-widest text-primary border border-primary/20 px-4 py-2 rounded-xl"
+            >
+              Recarregar
+            </button>
+            <button 
+              onClick={() => logout()}
+              className="text-[10px] font-black uppercase tracking-widest text-error border border-error/20 px-4 py-2 rounded-xl"
+            >
+              Sair
+            </button>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;

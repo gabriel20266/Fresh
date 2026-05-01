@@ -2,22 +2,27 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // 0. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // --- Helpers ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isAdmin() {
+      return isSignedIn() && 
+        request.auth.token.email == 'gabrielpe3109@gmail.com';
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function isVerifiedAdmin() {
+      return isAdmin();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function incoming() {
@@ -28,94 +33,109 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Product validation
-    function isValidProduct(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() <= 100
-        && data.expiryDate is string 
-        && data.category is string && data.category.size() <= 50
-        && data.userId == request.auth.uid
-        && (!('price' in data) || data.price == null || data.price is number)
-        && (!('observations' in data) || data.observations == null || (data.observations is string && data.observations.size() <= 1000))
-        && (!('imageURL' in data) || data.imageURL == null || (data.imageURL is string && data.imageURL.size() < 1048576));
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Category validation
-    function isValidCategory(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() <= 50
-        && data.userId == request.auth.uid;
-    }
+    // --- Entity Validations ---
 
-    function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/userSettings/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // UserSettings validation
     function isValidUserSettings(data) {
-      return data.notificationsEnabled is bool
-        && (data.advanceDays is int || data.advanceDays is float)
-        && data.currency is string && data.currency.size() <= 10
-        && data.role in ['admin', 'client']
-        && data.plan in ['free', 'premium']
-        && data.premiumStatus in ['none', 'pending', 'approved']
-        && (!('productCount' in data) || (data.productCount is int || data.productCount is float))
-        && (!('email' in data) || (data.email is string && data.email.size() <= 200))
-        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1048576))
-        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
-        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
+      return data.notificationsEnabled is bool &&
+        data.advanceDays is number &&
+        data.currency is string &&
+        data.currency.size() <= 10 &&
+        data.email is string &&
+        data.plan in ['basic', 'premium'] &&
+        data.role in ['admin', 'user'] &&
+        data.premiumStatus in ['none', 'pending', 'approved', 'rejected'] &&
+        data.productLimit is number &&
+        data.productCount is number;
     }
 
+    function isValidProduct(data) {
+      return data.name is string && data.name.size() <= 100 &&
+        data.category is string &&
+        data.userId == request.auth.uid &&
+        data.expiryDate is string;
+    }
+
+    function isValidPayment(data) {
+      return data.userId == request.auth.uid &&
+        data.userEmail == request.auth.token.email &&
+        data.status in ['pendente', 'aprovado', 'rejeitado'] &&
+        data.referencia is string;
+    }
+
+    // --- Matches ---
+
+    // 1. User Email Index (used for uniqueness check)
     match /users/{email} {
-      allow get: if true; 
-      allow create: if isSignedIn() && request.auth.token.email.lower() == email.lower();
-      allow list: if isAdmin();
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable index
     }
 
-    match /products/{productId} {
-      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
-      
-      allow create: if isSignedIn() 
-        && isValidId(productId)
-        && isValidProduct(incoming())
-        && incoming().createdAt == request.time
-        && incoming().keys().hasAll(['name', 'expiryDate', 'category', 'userId', 'createdAt', 'updatedAt']);
-        
-      allow update: if isSignedIn()
-        && (isOwner(existing().userId) || isAdmin())
-        && isValidProduct(incoming())
-        && incoming().userId == existing().userId
-        && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time
-        && (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'expiryDate', 'category', 'price', 'observations', 'imageURL', 'updatedAt']));
-        
-      allow delete: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
-    }
-
+    // 2. User Settings
     match /userSettings/{userId} {
-      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
+      allow delete: if isVerifiedAdmin();
       
-      allow create: if isSignedIn() && isOwner(userId) && isValidUserSettings(incoming())
-        && (incoming().role == 'client' || request.auth.token.email == 'gabrielpe3109@gmail.com')
-        && (incoming().plan == 'free')
-        && (incoming().premiumStatus == 'none');
+      allow create: if isOwner(userId) && 
+        (incoming().role == 'user' || (incoming().role == 'admin' && request.auth.token.email == 'gabrielpe3109@gmail.com')) && 
+        incoming().plan == 'basic' && 
+        incoming().productLimit == 100 &&
+        incoming().premiumStatus == 'none' &&
+        isValidUserSettings(incoming());
         
-      allow update: if isSignedIn() && (isOwner(userId) || isAdmin()) && isValidUserSettings(incoming())
-        && (
-          isAdmin() || (
-            isOwner(userId) 
-            && incoming().role == existing().role 
-            && incoming().plan == existing().plan
-            && (incoming().premiumStatus == existing().premiumStatus || (existing().premiumStatus == 'none' && incoming().premiumStatus == 'pending'))
-          )
-        );
+      allow update: if (isOwner(userId) || isVerifiedAdmin()) && (
+        // Admin can change anything (for manual role/plan setting)
+        isVerifiedAdmin() || 
+        // Allow master admin email to promote itself during initialization if needed
+        (isOwner(userId) && request.auth.token.email == 'gabrielpe3109@gmail.com') ||
+        // User can only change specific fields
+        (
+          isOwner(userId) && 
+          incoming().diff(existing()).affectedKeys().hasOnly(['notificationsEnabled', 'advanceDays', 'currency', 'photoURL', 'displayName', 'premiumStatus', 'productCount', 'updatedAt']) &&
+          // User CANNOT change their own role or plan or productLimit
+          incoming().role == existing().role &&
+          incoming().plan == existing().plan &&
+          incoming().productLimit == existing().productLimit &&
+          // User can only set premiumStatus to pending (if requesting)
+          (incoming().premiumStatus == existing().premiumStatus || incoming().premiumStatus == 'pending')
+        )
+      );
     }
 
+    // 3. Products
+    match /products/{productId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidProduct(incoming()) && 
+        (isVerifiedAdmin() || get(/databases/$(database)/documents/userSettings/$(request.auth.uid)).data.productCount < get(/databases/$(database)/documents/userSettings/$(request.auth.uid)).data.productLimit);
+      allow update: if (resource.data.userId == request.auth.uid || isVerifiedAdmin()) && isValidProduct(incoming());
+      allow delete: if resource.data.userId == request.auth.uid || isVerifiedAdmin();
+    }
+
+    // 4. Categories
     match /categories/{categoryId} {
-      allow get: if isSignedIn() && isOwner(existing().userId);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && isValidId(categoryId) && isValidCategory(incoming()) && incoming().createdAt == request.time;
-      allow update: if isSignedIn() && isOwner(existing().userId) && isValidCategory(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['name']);
-      allow delete: if isSignedIn() && isOwner(existing().userId);
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update: if (resource.data.userId == request.auth.uid || isVerifiedAdmin());
+      allow delete: if (resource.data.userId == request.auth.uid || isVerifiedAdmin());
+    }
+
+    // 5. Payments
+    match /payments/{paymentId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().status == 'pendente' && isValidPayment(incoming());
+      allow update: if isVerifiedAdmin() && incoming().status in ['aprovado', 'rejeitado'];
+      allow delete: if isVerifiedAdmin();
+    }
+
+    // 6. Notifications
+    match /notifications/{notificationId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
     }
   }
 }

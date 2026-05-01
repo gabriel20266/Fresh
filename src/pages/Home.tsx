@@ -53,13 +53,18 @@ export const Home: React.FC = () => {
   }, [user, isAdmin]);
 
   const advanceDays = settings.advanceDays;
-  const productLimit = settings.plan === 'premium' ? 500 : 50;
-  const usagePercentage = Math.min(100, (products.length / productLimit) * 100);
+  const productLimit = isAdmin ? 999999 : (settings.productLimit || (settings.plan === 'premium' ? 500 : 100));
+  const usagePercentage = isAdmin ? 0 : Math.min(100, (products.length / productLimit) * 100);
   const [requestSent, setRequestSent] = useState(false);
 
+  const [referencia, setReferencia] = useState('');
+  const [requestLoading, setRequestLoading] = useState(false);
+
   const handleRequestPremium = async () => {
-    await requestPremium();
+    setRequestLoading(true);
+    await requestPremium(''); // For now, no URL, just creating the record
     setRequestSent(true);
+    setRequestLoading(false);
   };
 
   const stats = {
@@ -98,7 +103,9 @@ export const Home: React.FC = () => {
         case 'name':
           return a.name.localeCompare(b.name);
         case 'newest':
-          return b.createdAt.toMillis() - a.createdAt.toMillis();
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          return timeB - timeA;
         default:
           return 0;
       }
@@ -136,16 +143,20 @@ export const Home: React.FC = () => {
           >
             <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Total</p>
             <p className="text-2xl font-bold text-on-surface">{stats.total}</p>
-            <div className="w-full h-1 bg-surface-container rounded-full overflow-hidden mt-1">
-              <div 
-                className={cn(
-                  "h-full transition-all duration-1000",
-                  usagePercentage > 90 ? "bg-error" : usagePercentage > 70 ? "bg-amber-500" : "bg-primary"
-                )}
-                style={{ width: `${usagePercentage}%` }}
-              />
-            </div>
-            <p className="text-[8px] font-bold text-outline">limite: {stats.limit}</p>
+            {!isAdmin && (
+              <div className="w-full h-1 bg-surface-container rounded-full overflow-hidden mt-1">
+                <div 
+                  className={cn(
+                    "h-full transition-all duration-1000",
+                    usagePercentage > 90 ? "bg-error" : usagePercentage > 70 ? "bg-amber-500" : "bg-primary"
+                  )}
+                  style={{ width: `${usagePercentage}%` }}
+                />
+              </div>
+            )}
+            <p className="text-[8px] font-bold text-outline uppercase">
+              {isAdmin ? 'Ilimitado' : `limite: ${stats.limit}`}
+            </p>
           </motion.div>
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -308,10 +319,11 @@ export const Home: React.FC = () => {
       </div>
 
       {/* Premium Upgrade Banner */}
-      {settings.plan === 'free' && !isAdmin && (
+      {settings.plan === 'basic' && !isAdmin && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           className="bg-white border border-secondary shadow-lg shadow-secondary/5 p-6 rounded-3xl overflow-hidden relative"
         >
           <div className="absolute top-0 right-0 p-3">
@@ -326,7 +338,7 @@ export const Home: React.FC = () => {
             </div>
             
             <div className="flex-1 text-center md:text-left space-y-1">
-              <h3 className="text-lg font-black text-on-surface">Plano Premium</h3>
+              <h3 className="text-lg font-black text-on-surface">Upgrade para Plano Premium</h3>
               <p className="text-xs text-outline leading-relaxed max-w-sm">
                 Aumente seu limite para <span className="font-bold text-secondary">500 produtos</span> e tenha uma gestão profissional do seu estoque.
               </p>
@@ -336,8 +348,15 @@ export const Home: React.FC = () => {
               {settings.premiumStatus === 'pending' || requestSent ? (
                 <div className="px-6 py-3 bg-surface-container-high text-outline rounded-xl font-bold text-sm text-center border border-outline-variant/30 flex items-center justify-center gap-2">
                   <Package className="w-4 h-4" />
-                  Solicitação Pendente
+                  Solicitação em Análise
                 </div>
+              ) : settings.premiumStatus === 'rejected' ? (
+                <button 
+                  onClick={handleRequestPremium}
+                  className="w-full md:w-auto px-8 py-3 bg-error text-white rounded-xl font-black text-sm uppercase tracking-widest shadow-xl shadow-error/20 active:scale-95 transition-all text-center"
+                >
+                  Tentar Novamente
+                </button>
               ) : (
                 <button 
                   onClick={handleRequestPremium}

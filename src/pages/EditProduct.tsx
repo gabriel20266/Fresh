@@ -12,11 +12,14 @@ import { resizeImage } from '../lib/image';
 
 export const EditProduct: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user, settings } = useAuth();
+  const { user, settings, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
+  const [productOwnerId, setProductOwnerId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     expiryDate: '',
@@ -32,22 +35,15 @@ export const EditProduct: React.FC = () => {
 
     const fetchData = async () => {
       try {
-        // Fetch Categories
-        const catQ = query(
-          collection(db, 'categories'),
-          where('userId', '==', user.uid),
-          orderBy('createdAt', 'asc')
-        );
-        const catSnapshot = await getDocs(catQ);
-        const customCategories = catSnapshot.docs.map(doc => (doc.data() as UserCategory).name);
-        setCategories(customCategories);
-
-        // Fetch Product
+        // 1. Fetch Product first
         const docRef = doc(db, 'products', id);
         const docSnap = await getDoc(docRef);
+        
         if (docSnap.exists()) {
           const data = docSnap.data() as Product;
-          if (data.userId === user.uid) {
+          
+          if (data.userId === user.uid || isAdmin) {
+            setProductOwnerId(data.userId);
             setFormData({
               name: data.name,
               expiryDate: data.expiryDate,
@@ -63,6 +59,16 @@ export const EditProduct: React.FC = () => {
               today.setHours(0, 0, 0, 0);
               setDateWarning(selected < today);
             }
+
+            // 2. Fetch Categories for the product owner (could be current user or another user if admin)
+            const catQ = query(
+              collection(db, 'categories'),
+              where('userId', '==', data.userId),
+              orderBy('createdAt', 'asc')
+            );
+            const catSnapshot = await getDocs(catQ);
+            const customCategories = catSnapshot.docs.map(doc => (doc.data() as UserCategory).name);
+            setCategories(customCategories);
           } else {
             navigate('/');
           }
@@ -77,7 +83,31 @@ export const EditProduct: React.FC = () => {
     };
 
     fetchData();
-  }, [id, user, navigate]);
+  }, [id, user, navigate, isAdmin]);
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim() || !user) return;
+    try {
+      const targetUserId = (isAdmin && productOwnerId) ? productOwnerId : user.uid;
+      await addDoc(collection(db, 'categories'), {
+        name: newCategoryName.trim(),
+        userId: targetUserId,
+        createdAt: serverTimestamp()
+      });
+      setNewCategoryName('');
+      setShowCategoryDialog(false);
+      
+      const catQ = query(
+        collection(db, 'categories'),
+        where('userId', '==', targetUserId),
+        orderBy('createdAt', 'asc')
+      );
+      const catSnapshot = await getDocs(catQ);
+      setCategories(catSnapshot.docs.map(doc => (doc.data() as UserCategory).name));
+    } catch (error) {
+      console.error("Error adding category:", error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -255,19 +285,20 @@ export const EditProduct: React.FC = () => {
           <div className="space-y-3">
             <div className="flex justify-between items-center px-1">
               <label className="text-[10px] font-bold text-outline uppercase tracking-widest leading-none">Categoria</label>
+              <button 
+                type="button"
+                onClick={() => setShowCategoryDialog(true)}
+                className="flex items-center gap-1 text-[10px] font-black text-primary uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all"
+              >
+                <Plus className="w-3 h-3" />
+                Nova
+              </button>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {categories.length === 0 ? (
                 <div className="w-full p-4 bg-surface-container-low rounded-xl border border-dashed border-outline-variant/50 text-center space-y-2">
                   <p className="text-[10px] text-outline font-medium">Você ainda não tem categorias.</p>
-                  <button 
-                    type="button"
-                    onClick={() => navigate('/admin')}
-                    className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
-                  >
-                    Criar no Painel
-                  </button>
                 </div>
               ) : (
                 categories.map((cat) => (
@@ -288,6 +319,59 @@ export const EditProduct: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* New Category Dialog */}
+          <AnimatePresence>
+            {showCategoryDialog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowCategoryDialog(false)}
+                  className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                />
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  className="relative w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl space-y-4"
+                >
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-on-surface">Nova Categoria</h3>
+                    <p className="text-xs text-on-surface-variant">Como você quer chamar essa categoria?</p>
+                  </div>
+                  
+                  <input 
+                    autoFocus
+                    type="text"
+                    placeholder="Ex: Congelados, Padaria..."
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                    className="w-full px-4 py-3 rounded-xl border border-outline-variant bg-surface-container-low text-sm focus:ring-2 focus:ring-primary outline-none"
+                  />
+
+                  <div className="flex gap-2 pt-2">
+                    <button 
+                      type="button"
+                      onClick={() => setShowCategoryDialog(false)}
+                      className="flex-1 py-3 text-sm font-bold text-outline hover:bg-surface-container-high rounded-xl transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={handleAddCategory}
+                      className="flex-1 py-3 text-sm font-bold bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      Criar Categoria
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
 
           {/* Observations */}
           <div className="space-y-3">

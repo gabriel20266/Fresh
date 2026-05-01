@@ -4,16 +4,46 @@ import { Bell, CloudUpload, Trash2, Info, LogOut, ChevronRight, CheckCircle2, Ci
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, writeBatch, deleteDoc, orderBy } from 'firebase/firestore';
 import { CURRENCIES } from '../lib/format';
 
 import { Logo } from '../components/Logo';
 
 export const Settings: React.FC = () => {
-  const { user, logout, settings, updateSettings, updateProfileImage } = useAuth();
+  const { user, logout, settings, updateSettings, updateProfileImage, isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [modal, setModal] = useState<{ type: 'clear' | 'backup' | 'success' | 'updating', message: string } | null>(null);
+  const [userCategories, setUserCategories] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchCats = async () => {
+      try {
+        const q = query(
+          collection(db, 'categories'),
+          where('userId', '==', user.uid),
+          orderBy('createdAt', 'asc')
+        );
+        const snapshot = await getDocs(q);
+        setUserCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (err) {
+        console.error("Error fetching cats:", err);
+      }
+    };
+    fetchCats();
+  }, [user]);
+
+  const handleDeleteCategory = async (catId: string) => {
+    if (window.confirm('Excluir esta categoria? Isso não removerá os produtos vinculados a ela.')) {
+      try {
+        await deleteDoc(doc(db, 'categories', catId));
+        setUserCategories(prev => prev.filter(c => c.id !== catId));
+      } catch (err) {
+        console.error("Error deleting cat:", err);
+      }
+    }
+  };
 
   const notificationsEnabled = settings.notificationsEnabled;
   const advanceDays = settings.advanceDays;
@@ -286,7 +316,7 @@ export const Settings: React.FC = () => {
             />
             <div className="flex items-center gap-2">
               <span className="text-[9px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full uppercase tracking-widest border border-white/20">
-                {settings.role === 'admin' ? 'Administrador' : settings.plan === 'premium' ? 'Plano Premium' : 'Plano Free'}
+                {settings.role === 'admin' ? 'Administrador' : settings.plan === 'premium' ? 'Plano Premium' : 'Plano BÁSICO'}
               </span>
               <p className="text-sm opacity-80 font-medium truncate max-w-[150px]">{user?.email}</p>
             </div>
@@ -295,80 +325,72 @@ export const Settings: React.FC = () => {
       </motion.div>
 
       {/* Subscription Plan */}
-      <motion.section 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.12 }}
-        className="space-y-4"
-      >
-        <div className="flex items-center gap-2 px-2">
-          <CircleDollarSign className="w-4 h-4 text-primary" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Plano e Assinatura</span>
-        </div>
-        <div className="bg-white rounded-3xl shadow-sm border border-outline-variant/30 overflow-hidden relative">
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className={cn(
-                  "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg",
-                  settings.plan === 'premium' ? "bg-primary text-white shadow-primary/20" : "bg-surface-container-highest text-outline"
-                )}>
-                  {settings.plan === 'premium' ? <CheckCircle2 className="w-6 h-6" /> : <UserIcon className="w-6 h-6" />}
+      {!isAdmin && (
+        <motion.section 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12 }}
+          className="space-y-4"
+        >
+          <div className="flex items-center gap-2 px-2">
+            <CircleDollarSign className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Plano e Assinatura</span>
+          </div>
+          <div className="bg-white rounded-3xl shadow-sm border border-outline-variant/30 overflow-hidden relative">
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={cn(
+                    "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg",
+                    settings.plan === 'premium' ? "bg-primary text-white shadow-primary/20" : "bg-surface-container-highest text-outline"
+                  )}>
+                    {settings.plan === 'premium' ? <CheckCircle2 className="w-6 h-6" /> : <UserIcon className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-on-surface">
+                      Plano {settings.plan === 'premium' ? 'Premium' : 'Básico'}
+                    </h3>
+                    <p className="text-sm text-on-surface-variant">
+                      Limite: {isAdmin ? 'Ilimitado' : `${settings.productLimit} produtos`}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-on-surface">
-                    Plano {settings.plan === 'premium' ? 'Premium' : 'Básico'}
-                  </h3>
-                  <p className="text-sm text-on-surface-variant">
-                    Limite: {settings.plan === 'premium' ? '500' : '100'} produtos
-                  </p>
-                </div>
+                {settings.plan === 'basic' && (
+                  <div className="bg-primary/10 text-primary text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter">
+                    Ativo
+                  </div>
+                )}
               </div>
-              {settings.plan === 'free' && (
-                <div className="bg-primary/10 text-primary text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-tighter">
-                  Grátis
+  
+              {settings.plan === 'basic' && (
+                <div className="space-y-4 pt-2">
+                  <p className="text-sm text-on-surface-variant leading-relaxed">
+                    Precisa de mais espaço? O plano Premium permite até <b>500 produtos</b> e suporte priorizado.
+                  </p>
+                  <button 
+                    onClick={() => {
+                      setModal({ type: 'success', message: 'Para solicitar o upgrade para o plano Premium, utilize o banner na tela inicial do aplicativo e envie seu comprovante.' });
+                    }}
+                    className="w-full py-4 bg-primary text-white rounded-2xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
+                  >
+                    <CircleDollarSign className="w-5 h-5" />
+                    Solicitar Upgrade Premium
+                  </button>
+                </div>
+              )}
+  
+              {settings.plan === 'premium' && (
+                <div className="bg-primary/5 rounded-2xl p-4 border border-primary/10 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-primary opacity-80 uppercase tracking-widest">Status da Conta</p>
+                    <p className="text-sm font-bold text-on-surface">Assinatura Premium Ativa</p>
+                  </div>
                 </div>
               )}
             </div>
-
-            {settings.plan === 'free' && (
-              <div className="space-y-4 pt-2">
-                <p className="text-sm text-on-surface-variant leading-relaxed">
-                  Precisa de mais espaço? O plano Premium permite até <b>500 produtos</b> e suporte priorizado.
-                </p>
-                <button 
-                  onClick={() => {
-                    updateSettings({ plan: 'premium' });
-                    setModal({ type: 'success', message: 'Parabéns! Você agora é um usuário Premium. Seu limite foi aumentado para 500 produtos.' });
-                  }}
-                  className="w-full py-4 bg-primary text-white rounded-2xl font-bold transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
-                >
-                  <CircleDollarSign className="w-5 h-5" />
-                  Upgrade para Premium
-                </button>
-              </div>
-            )}
-
-            {settings.plan === 'premium' && (
-              <div className="bg-primary/5 rounded-2xl p-4 border border-primary/10 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-primary opacity-80 uppercase tracking-widest">Status da Conta</p>
-                  <p className="text-sm font-bold text-on-surface">Assinatura Ativa</p>
-                </div>
-                <button 
-                  onClick={() => {
-                    updateSettings({ plan: 'free' });
-                    setModal({ type: 'success', message: 'Sua assinatura foi alterada para o plano básico.' });
-                  }}
-                  className="text-[10px] font-bold text-outline hover:text-error transition-colors uppercase tracking-widest"
-                >
-                  Cancelar Plano
-                </button>
-              </div>
-            )}
           </div>
-        </div>
-      </motion.section>
+        </motion.section>
+      )}
 
       {/* Notifications */}
       <motion.section 
@@ -448,10 +470,41 @@ export const Settings: React.FC = () => {
         className="space-y-4"
       >
         <div className="flex items-center gap-2 px-2">
-          <CircleDollarSign className="w-4 h-4 text-primary" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Preferências</span>
+          <ChevronRight className="w-4 h-4 text-primary" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Personalização</span>
         </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-outline-variant/30 p-5 space-y-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-outline-variant/30 px-5 pt-5 pb-2 space-y-5">
+          {/* Categories management */}
+          <div>
+            <h3 className="text-sm font-bold text-on-surface mb-3 flex items-center justify-between">
+              Suas Categorias
+              <span className="text-[10px] text-outline font-normal">({userCategories.length})</span>
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {userCategories.length === 0 ? (
+                <p className="text-[10px] text-outline italic py-2">Nenhuma categoria personalizada criada.</p>
+              ) : (
+                userCategories.map((cat) => (
+                  <div 
+                    key={cat.id} 
+                    className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/30 pl-3 pr-2 py-1.5 rounded-full"
+                  >
+                    <span className="text-xs font-medium text-on-surface">{cat.name}</span>
+                    <button 
+                      onClick={() => handleDeleteCategory(cat.id)}
+                      className="p-1 text-outline hover:text-error transition-colors rounded-full hover:bg-error/10"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <p className="text-[9px] text-outline mt-4 opacity-60">Você pode adicionar novas categorias enquanto cadastra um produto.</p>
+          </div>
+
+          <div className="h-px bg-outline-variant/10 w-full" />
+
           <div>
             <h3 className="text-sm font-bold text-on-surface mb-3">Moeda do Aplicativo</h3>
             <div className="grid grid-cols-2 gap-2">

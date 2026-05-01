@@ -10,7 +10,7 @@ export const Login: React.FC = () => {
   const { user, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [error, setError] = useState<string | null>(null);
+  const [errorModal, setErrorModal] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>((searchParams.get('mode') as any) || 'login');
   const [loading, setLoading] = useState(false);
@@ -24,17 +24,18 @@ export const Login: React.FC = () => {
 
   // Redirecionar se já estiver logado (e não estiver mostrando mensagem de sucesso)
   useEffect(() => {
-    if (user && !successMessage) {
+    if (user && !successMessage && !errorModal) {
       navigate('/', { replace: true });
     }
-  }, [user, successMessage, navigate]);
+  }, [user, successMessage, errorModal, navigate]);
 
   // Redirecionar após o tempo do modal de sucesso (apenas se não for recuperação de senha)
   useEffect(() => {
     if (successMessage && mode !== 'forgot') {
       const timer = setTimeout(() => {
+        setSuccessMessage(null);
         navigate('/', { replace: true });
-      }, 2000);
+      }, 2500);
       return () => clearTimeout(timer);
     }
   }, [successMessage, navigate, mode]);
@@ -46,28 +47,25 @@ export const Login: React.FC = () => {
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
-      setError(null);
+      setErrorModal(null);
       
-      // Detect if we are likely in a WebView/Mobile environment
-      const isWebView = /wv|WebView|iPhone|Android/i.test(navigator.userAgent);
-      
-      // If it's a mobile/WebView, prefer redirect immediately as popups often fail in APKs
-      if (isWebView) {
-        await signInWithGoogle(true);
-      } else {
-        await signInWithGoogle(false);
-        setSuccessMessage('Login realizado com sucesso!');
+      // We are in a browser environment, popup is preferred for better UX in desktop
+      // but in this iframe context, sometimes redirects are safer. 
+      // However, let's try popup first and fallback to redirect if it fails.
+      try {
+        await signInWithGoogle(false); // Try popup
+        setSuccessMessage('Login com Google realizado com sucesso!');
+      } catch (err: any) {
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+          // If popup failed/closed, try redirect
+          await signInWithGoogle(true);
+          // Redirect will leave the page, so no success message here
+        } else {
+          throw err;
+        }
       }
     } catch (err: any) {
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        try {
-          await signInWithGoogle(true);
-        } catch (redirErr: any) {
-          setError(getErrorMessage(redirErr));
-        }
-      } else {
-        setError(getErrorMessage(err));
-      }
+      setErrorModal(getErrorMessage(err));
       console.error("Erro Google Auth:", err);
     } finally {
       setLoading(false);
@@ -78,27 +76,31 @@ export const Login: React.FC = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      setError(null);
+      setErrorModal(null);
       if (mode === 'login') {
         await signInWithEmail(email, password);
-        setSuccessMessage('Bem-vindo de volta! Entrando...');
+        setSuccessMessage('Acesso autorizado! Carregando seu painel...');
       } else if (mode === 'signup') {
+        if (!email || !password) {
+          setErrorModal('Por favor, preencha todos os campos obrigatórios.');
+          return;
+        }
         await signUpWithEmail(email, password, name);
-        setSuccessMessage('Conta criada com sucesso! Bem-vindo.');
+        setSuccessMessage('Sua conta foi criada com sucesso! Seja bem-vindo.');
       } else if (mode === 'forgot') {
         if (!email) {
-          setError('Por favor, insira seu e-mail.');
+          setErrorModal('Por favor, insira seu e-mail para receber o link de recuperação.');
           return;
         }
         await resetPassword(email);
-        setSuccessMessage('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
+        setSuccessMessage('Link enviado! Verifique seu e-mail (inclusive o spam) para redefinir sua senha.');
         setTimeout(() => {
           setSuccessMessage(null);
           setMode('login');
-        }, 3500);
+        }, 5000);
       }
     } catch (err: any) {
-      setError(getErrorMessage(err));
+      setErrorModal(getErrorMessage(err));
       console.error(err);
     } finally {
       setLoading(false);
@@ -110,17 +112,20 @@ export const Login: React.FC = () => {
     const code = err.code || (err.message?.includes('auth/') ? err.message.match(/auth\/[a-z-]+/)?.[0] : null);
     
     switch (code) {
-      case 'auth/operation-not-allowed': return 'O método de login (E-mail ou Google) ainda não está ativado no Firebase Console. Por favor, ative-os na aba Authentication.';
-      case 'auth/unauthorized-domain': return 'Este domínio não está autorizado no Firebase. Adicione o domínio do app na lista de Domínios Autorizados no console.';
-      case 'auth/user-not-found': return 'Usuário não encontrado. Verifique seu e-mail ou crie uma conta nova.';
-      case 'auth/wrong-password': return 'Senha incorreta. Tente novamente ou recupere sua senha.';
-      case 'auth/email-already-in-use': return 'Este e-mail já está sendo usado. Tente fazer login em vez de cadastrar.';
-      case 'auth/weak-password': return 'A senha precisa ter pelo menos 6 caracteres para sua segurança.';
-      case 'auth/invalid-email': return 'Por favor, insira um e-mail válido (ex: seu@email.com).';
-      case 'auth/network-request-failed': return 'Falha na conexão com o servidor. Verifique sua internet.';
-      case 'auth/popup-closed-by-user': return 'A janela de login foi fechada antes de completar a autenticação.';
-      case 'auth/internal-error': return 'Erro interno do Firebase. Tente novamente em alguns segundos.';
-      default: return `Ops! Ocorreu um problema: ${code || 'Verifique os dados e tente novamente.'}`;
+      case 'auth/user-disabled': return 'Esta conta foi desativada. Entre em contato com o suporte.';
+      case 'auth/operation-not-allowed': return 'Este método de login não está configurado. Fale com o administrador.';
+      case 'auth/unauthorized-domain': return 'Domínio não autorizado para login. Use o domínio oficial do app.';
+      case 'auth/user-not-found': return 'Não encontramos uma conta com este e-mail. Deseja criar uma?';
+      case 'auth/wrong-password': return 'Senha incorreta. Se esqueceu sua senha, use a opção de recuperação.';
+      case 'auth/invalid-credential': return 'E-mail ou senha inválidos. Por favor, tente novamente.';
+      case 'auth/email-already-in-use': return 'Este e-mail já está cadastrado. Tente fazer login ou recuperar a senha.';
+      case 'auth/weak-password': return 'Sua senha é muito fraca. Ela deve ter pelo menos 6 caracteres.';
+      case 'auth/invalid-email': return 'O formato do e-mail é inválido. Ex: usuario@exemplo.com';
+      case 'auth/network-request-failed': return 'Erro de conexão. Verifique sua internet e tente novamente.';
+      case 'auth/too-many-requests': return 'Muitas tentativas falhas. Sua conta foi bloqueada temporariamente para sua segurança. Tente novamente mais tarde.';
+      case 'auth/popup-closed-by-user': return 'A janela de autenticação foi fechada antes de terminar o processo.';
+      case 'auth/internal-error': return 'Ocorreu um erro interno. Por favor, tente novamente em alguns instantes.';
+      default: return `Não foi possível completar a ação: ${code || 'Tente novamente.'}`;
     }
   };
 
@@ -141,30 +146,58 @@ export const Login: React.FC = () => {
             <motion.div 
               initial={{ scale: 0.9, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-4"
+              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-5"
             >
-              <div className="w-16 h-16 bg-primary/10 rounded-full mx-auto flex items-center justify-center">
-                <CheckCircle2 className="w-8 h-8 text-primary" />
+              <div className="w-20 h-20 bg-primary/10 rounded-full mx-auto flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-primary" />
               </div>
-              <div className="space-y-1.5">
-                <h3 className="text-2xl font-bold text-on-surface">Sucesso!</h3>
-                <p className="text-sm text-on-surface-variant leading-relaxed">
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold text-on-surface uppercase tracking-tight">Sucesso</h3>
+                <p className="text-sm text-outline leading-tight">
                   {successMessage}
                 </p>
               </div>
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: '100%' }}
-                transition={{ duration: 1.5 }}
-                className="h-1 bg-primary/10 rounded-full overflow-hidden"
-              >
-                <motion.div 
-                  initial={{ x: '-100%' }}
-                  animate={{ x: '0%' }}
-                  transition={{ duration: 1.5 }}
-                  className="h-full bg-primary" 
-                />
-              </motion.div>
+              <div className="pt-2">
+                <button 
+                  onClick={() => setSuccessMessage(null)}
+                  className="w-full py-3 bg-primary text-white rounded-xl font-bold text-xs uppercase tracking-widest"
+                >
+                  Continuar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {errorModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-on-surface/40 backdrop-blur-md p-5"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-5"
+            >
+              <div className="w-20 h-20 bg-error/10 rounded-full mx-auto flex items-center justify-center">
+                <AlertCircle className="w-10 h-10 text-error" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-bold text-error uppercase tracking-tight">Erro no Acesso</h3>
+                <p className="text-sm text-outline leading-tight">
+                  {errorModal}
+                </p>
+              </div>
+              <div className="pt-2">
+                <button 
+                  onClick={() => setErrorModal(null)}
+                  className="w-full py-3 bg-error text-white rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-error/10 active:scale-95 transition-all"
+                >
+                  Tentar Novamente
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -273,17 +306,6 @@ export const Login: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-3 bg-error-container/50 text-error rounded-xl flex items-center gap-2.5 text-xs border border-error/10"
-            >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
-            </motion.div>
-          )}
-
           <div className="pt-2">
             <button 
               type="submit"
@@ -298,7 +320,7 @@ export const Login: React.FC = () => {
             <button 
               type="button"
               onClick={() => {
-                setError(null);
+                setErrorModal(null);
                 setMode(mode === 'login' ? 'signup' : 'login');
               }}
               className="text-sm text-primary font-bold hover:opacity-80 transition-opacity"

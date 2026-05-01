@@ -14,7 +14,7 @@ import { formatCurrency } from '../lib/format';
 export const ProductDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, settings } = useAuth();
+  const { user, settings, isAdmin } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const advanceDays = settings.advanceDays;
@@ -28,7 +28,7 @@ export const ProductDetails: React.FC = () => {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data() as Product;
-          if (data.userId === user.uid) {
+          if (data.userId === user.uid || isAdmin) {
             setProduct({ id: docSnap.id, ...data });
           } else {
             navigate('/');

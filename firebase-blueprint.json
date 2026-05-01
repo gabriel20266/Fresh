@@ -38,13 +38,29 @@
         "photoURL": { "type": "string" },
         "displayName": { "type": "string" },
         "email": { "type": "string", "description": "User email indexed for unique check" },
-        "role": { "type": "string", "enum": ["admin", "client"] },
-        "plan": { "type": "string", "enum": ["free", "premium"], "description": "User subscription plan" },
-        "premiumStatus": { "type": "string", "enum": ["none", "pending", "approved"] },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "plan": { "type": "string", "enum": ["basic", "pro"], "description": "User subscription plan" },
+        "premiumStatus": { "type": "string", "enum": ["none", "pending", "approved", "rejected"] },
         "productCount": { "type": "number", "description": "Current number of products (cached)" },
+        "productLimit": { "type": "number" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["notificationsEnabled", "advanceDays", "currency", "email", "plan", "role", "premiumStatus"]
+      "required": ["notificationsEnabled", "advanceDays", "currency", "email", "plan", "role", "premiumStatus", "productLimit"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Registration of a premium upgrade request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "referencia": { "type": "string" },
+        "comprovante_url": { "type": "string" },
+        "status": { "type": "string", "enum": ["pendente", "aprovado", "rejeitado"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "processedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "referencia", "status"]
     },
     "Category": {
       "title": "Category",
@@ -74,6 +90,10 @@
     "/categories/{categoryId}": {
       "schema": "Category",
       "description": "Custom user categories"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Upgrade payment requests"
     }
   }
 }

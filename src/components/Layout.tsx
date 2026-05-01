@@ -56,8 +56,11 @@ export const Layout: React.FC = () => {
             )}
             <div className="flex flex-col items-end">
               <span className="text-sm font-bold text-on-surface leading-none">{user?.displayName || user?.email?.split('@')[0]}</span>
-              <span className="text-[9px] font-black text-outline uppercase tracking-widest mt-1">
-                {settings.role === 'admin' ? 'Administrador' : settings.plan === 'premium' ? 'Plano Premium' : 'Plano Free'}
+              <span className={cn(
+                "text-[9px] font-black uppercase tracking-widest mt-1 px-2 py-0.5 rounded-full",
+                settings.role === 'admin' ? "bg-on-surface text-surface" : "text-outline"
+              )}>
+                {settings.role === 'admin' ? 'Acesso Total' : settings.plan === 'premium' ? 'Plano Premium' : 'Plano BÁSICO'}
               </span>
             </div>
           </div>

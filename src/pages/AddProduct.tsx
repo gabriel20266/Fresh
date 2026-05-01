@@ -11,10 +11,12 @@ import { CURRENCIES } from '../lib/format';
 import { resizeImage } from '../lib/image';
 
 export const AddProduct: React.FC = () => {
-  const { user, settings } = useAuth();
+  const { user, settings, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     expiryDate: '',
@@ -25,28 +27,43 @@ export const AddProduct: React.FC = () => {
   });
   const [dateWarning, setDateWarning] = useState(false);
 
-  useEffect(() => {
+  const fetchCategories = async () => {
     if (!user) return;
-
-    const fetchCategories = async () => {
-      try {
-        const q = query(
-          collection(db, 'categories'),
-          where('userId', '==', user.uid),
-          orderBy('createdAt', 'asc')
-        );
-        const snapshot = await getDocs(q);
-        const customCategories = snapshot.docs.map(doc => (doc.data() as UserCategory).name);
-        
-        setCategories(customCategories);
-        if (customCategories.length > 0 && !formData.category) {
-          setFormData(prev => ({ ...prev, category: customCategories[0] }));
-        }
-      } catch (error) {
-        console.error("Error fetching categories:", error);
+    try {
+      const q = query(
+        collection(db, 'categories'),
+        where('userId', '==', user.uid),
+        orderBy('createdAt', 'asc')
+      );
+      const snapshot = await getDocs(q);
+      const customCategories = snapshot.docs.map(doc => (doc.data() as UserCategory).name);
+      setCategories(customCategories);
+      
+      if (customCategories.length > 0 && !formData.category) {
+        setFormData(prev => ({ ...prev, category: customCategories[0] }));
       }
-    };
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+    }
+  };
 
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim() || !user) return;
+    try {
+      await addDoc(collection(db, 'categories'), {
+        name: newCategoryName.trim(),
+        userId: user.uid,
+        createdAt: serverTimestamp()
+      });
+      setNewCategoryName('');
+      setShowCategoryDialog(false);
+      await fetchCategories();
+    } catch (error) {
+      console.error("Error adding category:", error);
+    }
+  };
+
+  useEffect(() => {
     fetchCategories();
   }, [user]);
 
@@ -67,18 +84,20 @@ export const AddProduct: React.FC = () => {
     e.preventDefault();
     if (!user || !formData.name || !formData.expiryDate) return;
 
-    const limit = settings.plan === 'premium' ? 500 : 50;
+    const limit = settings.productLimit || (settings.plan === 'premium' ? 500 : 100);
     
     setLoading(true);
     try {
-      // Check current count
-      const q = query(collection(db, 'products'), where('userId', '==', user.uid));
-      const snapshot = await getDocs(q);
-      
-      if (snapshot.size >= limit) {
-        alert(`Você atingiu o limite de ${limit} produtos para o seu plano ${settings.plan === 'free' ? 'Básico' : 'Premium'}.`);
-        setLoading(false);
-        return;
+      if (!isAdmin) {
+        // Check current count
+        const q = query(collection(db, 'products'), where('userId', '==', user.uid));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.size >= limit) {
+          alert(`Você atingiu o limite de ${limit} produtos para o seu plano ${settings.plan === 'premium' ? 'Premium' : 'Básico'}.`);
+          setLoading(false);
+          return;
+        }
       }
 
       const { price, imageURL, ...rest } = formData;
@@ -238,19 +257,20 @@ export const AddProduct: React.FC = () => {
           <div className="space-y-3">
             <div className="flex justify-between items-center px-1">
               <label className="text-[10px] font-bold text-outline uppercase tracking-widest leading-none">Categoria</label>
+              <button 
+                type="button"
+                onClick={() => setShowCategoryDialog(true)}
+                className="flex items-center gap-1 text-[10px] font-black text-primary uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all"
+              >
+                <Plus className="w-3 h-3" />
+                Nova
+              </button>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {categories.length === 0 ? (
                 <div className="w-full p-4 bg-surface-container-low rounded-xl border border-dashed border-outline-variant/50 text-center space-y-2">
                   <p className="text-[10px] text-outline font-medium">Você ainda não tem categorias.</p>
-                  <button 
-                    type="button"
-                    onClick={() => navigate('/admin')}
-                    className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
-                  >
-                    Criar no Painel
-                  </button>
                 </div>
               ) : (
                 categories.map((cat) => (
@@ -271,6 +291,59 @@ export const AddProduct: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* New Category Dialog */}
+          <AnimatePresence>
+            {showCategoryDialog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowCategoryDialog(false)}
+                  className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                />
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  className="relative w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl space-y-4"
+                >
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-on-surface">Nova Categoria</h3>
+                    <p className="text-xs text-on-surface-variant">Como você quer chamar essa categoria?</p>
+                  </div>
+                  
+                  <input 
+                    autoFocus
+                    type="text"
+                    placeholder="Ex: Congelados, Padaria..."
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                    className="w-full px-4 py-3 rounded-xl border border-outline-variant bg-surface-container-low text-sm focus:ring-2 focus:ring-primary outline-none"
+                  />
+
+                  <div className="flex gap-2 pt-2">
+                    <button 
+                      type="button"
+                      onClick={() => setShowCategoryDialog(false)}
+                      className="flex-1 py-3 text-sm font-bold text-outline hover:bg-surface-container-high rounded-xl transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={handleAddCategory}
+                      className="flex-1 py-3 text-sm font-bold bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
+                    >
+                      Criar Categoria
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
 
           {/* Observations */}
           <div className="space-y-3">
