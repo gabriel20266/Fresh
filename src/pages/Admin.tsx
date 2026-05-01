@@ -129,7 +129,7 @@ export const Admin: React.FC = () => {
         plan: 'premium',
         productLimit: 500,
         premiumStatus: 'approved',
-        updatedAt: new Date().toISOString()
+        updatedAt: serverTimestamp()
       });
 
       // 2. Update payment document
@@ -154,7 +154,7 @@ export const Admin: React.FC = () => {
       const userRef = doc(db, 'userSettings', userId);
       batch.update(userRef, {
         premiumStatus: 'rejected',
-        updatedAt: new Date().toISOString()
+        updatedAt: serverTimestamp()
       });
 
       // 2. Update payment document
@@ -296,35 +296,6 @@ export const Admin: React.FC = () => {
 
   return (
     <div className="px-5 md:px-6 py-4 space-y-6 pb-24">
-      {/* Email Verification Warning */}
-      {isAdmin && user && !user.emailVerified && (
-        <div className="bg-error/10 border border-error/20 p-4 rounded-2xl flex items-start gap-3">
-          <ShieldAlert className="w-5 h-5 text-error shrink-0" />
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-error uppercase tracking-widest">E-mail não verificado</h4>
-            <p className="text-[11px] text-on-surface leading-normal">
-              Como administrador, você precisa ter seu e-mail verificado para realizar ações críticas (excluir usuários, produtos, etc). 
-              Verifique sua caixa de entrada.
-            </p>
-            <button 
-              onClick={async () => {
-                try {
-                  await sendEmailVerification();
-                  setVerificationSent(true);
-                  alert("E-mail de verificação enviado! Confira sua caixa de entrada.");
-                } catch (err) {
-                  alert("Erro ao enviar: " + (err instanceof Error ? err.message : "Erro desconhecido"));
-                }
-              }}
-              disabled={verificationSent}
-              className="text-[10px] font-black uppercase tracking-widest text-error underline decoration-2 underline-offset-4 disabled:opacity-50"
-            >
-              {verificationSent ? "Enviado!" : "Reenviar e-mail de verificação"}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Search and Tabs */}
       <div className="space-y-4">
         {/* Tabs */}

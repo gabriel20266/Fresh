@@ -15,7 +15,8 @@ import {
   browserLocalPersistence,
   sendEmailVerification as firebaseSendEmailVerification
 } from 'firebase/auth';
-import { auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 
 interface UserSettings {
   notificationsEnabled: boolean;
@@ -78,8 +79,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setUser(authUser);
           // Carregar configurações do banco
           try {
-            const { doc, getDoc, setDoc } = await import('firebase/firestore');
-            const { db } = await import('../lib/firebase');
             const docRef = doc(db, 'userSettings', authUser.uid);
             const docSnap = await getDoc(docRef);
             
@@ -88,7 +87,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               // Force admin role if email matches
               if (authUser.email === 'gabrielpe3109@gmail.com' && data.role !== 'admin') {
                 data.role = 'admin';
-                await setDoc(docRef, { role: 'admin' }, { merge: true });
+                await setDoc(docRef, { role: 'admin', updatedAt: serverTimestamp() }, { merge: true });
               }
               setSettings(prev => ({
                 ...prev,
@@ -108,11 +107,12 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 email: authUser.email || '',
                 displayName: authUser.displayName || ''
               };
-              await setDoc(docRef, { ...initialSettings, updatedAt: new Date().toISOString() });
+              await setDoc(docRef, { ...initialSettings, updatedAt: serverTimestamp() });
               setSettings(initialSettings);
             }
           } catch (err) {
             console.error("Error loading settings:", err);
+            // This could be a permission error if the initial setDoc failed
           }
         } else {
           setUser(null);
@@ -156,10 +156,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings(newSettings);
     
     try {
-      const { doc, setDoc } = await import('firebase/firestore');
-      const { db } = await import('../lib/firebase');
       const docRef = doc(db, 'userSettings', user.uid);
-      await setDoc(docRef, { ...newSettings, updatedAt: new Date().toISOString() }, { merge: true });
+      await setDoc(docRef, { ...updates, updatedAt: serverTimestamp() }, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `userSettings/${user.uid}`);
     }
@@ -169,9 +167,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!user) return;
     
     try {
-      const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
-      const { db } = await import('../lib/firebase');
-      
       // 1. Create payment record
       await addDoc(collection(db, 'payments'), {
         userId: user.uid,
@@ -231,14 +226,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // 1. Proceed with Auth creation (Firebase handles uniqueness automatically)
     const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
     
-    // 2. Save to database (onAuthStateChanged will also handle this, but we do it here for immediate name update)
+    // 2. Save to database
     try {
       if (name) {
         await updateProfile(userCredential.user, { displayName: name });
       }
-      
-      const { doc, setDoc } = await import('firebase/firestore');
-      const { db } = await import('../lib/firebase');
       
       const settingsRef = doc(db, 'userSettings', userCredential.user.uid);
       const settingsData: UserSettings = { 
@@ -247,13 +239,15 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         email: email.toLowerCase(),
         role: email.toLowerCase() === 'gabrielpe3109@gmail.com' ? 'admin' : 'user',
         plan: 'basic',
+        premiumStatus: 'none',
         productCount: 0,
         productLimit: 100
       };
-      await setDoc(settingsRef, { ...settingsData, updatedAt: new Date().toISOString() }, { merge: true });
+      await setDoc(settingsRef, { ...settingsData, updatedAt: serverTimestamp() }, { merge: true });
     } catch (err) {
       console.error("Error saving user data during signup:", err);
-      // We don't throw here because the Auth account was created successfully
+      // Re-throw so Login.tsx can catch and show the error modal
+      handleFirestoreError(err, OperationType.WRITE, `userSettings/${userCredential.user.uid}`);
     }
   };
 

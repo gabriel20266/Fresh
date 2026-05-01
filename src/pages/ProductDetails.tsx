@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, increment } from '../lib/firebase';
 import { useAuth } from '../components/FirebaseProvider';
 import { Product, Category } from '../types';
 import { Calendar, Tag, FileText, Edit, Trash2, AlertCircle, ShoppingBasket, CircleDollarSign } from 'lucide-react';
@@ -50,6 +50,16 @@ export const ProductDetails: React.FC = () => {
     if (!id || !window.confirm('Tem certeza que deseja excluir este produto?')) return;
     try {
       await deleteDoc(doc(db, 'products', id));
+      
+      // Update productCount in userSettings
+      if (user) {
+        const settingsRef = doc(db, 'userSettings', user.uid);
+        await updateDoc(settingsRef, {
+          productCount: increment(-1),
+          updatedAt: serverTimestamp()
+        });
+      }
+      
       navigate('/');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `products/${id}`);

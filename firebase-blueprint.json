@@ -72,6 +72,20 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "userId"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or user notifications",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string", "enum": ["read", "unread"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "status"]
     }
   },
   "firestore": {
@@ -94,6 +108,10 @@
     "/payments/{paymentId}": {
       "schema": "Payment",
       "description": "Upgrade payment requests"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User and Admin notifications"
     }
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp, getDocs, query, where, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType, increment } from '../lib/firebase';
 import { useAuth } from '../components/FirebaseProvider';
 import { Category, UserCategory } from '../types';
 import { ShoppingBasket, Calendar, Utensils, ShoppingBag, Trash2, Package, Save, Lightbulb, CircleDollarSign, ImagePlus, X, Camera, Plus, Check } from 'lucide-react';
@@ -109,6 +109,14 @@ export const AddProduct: React.FC = () => {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // Update productCount in userSettings
+      const settingsRef = doc(db, 'userSettings', user.uid);
+      await updateDoc(settingsRef, {
+        productCount: increment(1),
+        updatedAt: serverTimestamp()
+      });
+
       navigate('/');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'products');

@@ -18,7 +18,7 @@ service cloud.firestore {
     }
 
     function isVerifiedAdmin() {
-      return isAdmin();
+      return isAdmin() && (request.auth.token.email_verified == true || request.auth.token.email == 'gabrielpe3109@gmail.com');
     }
 
     function isOwner(userId) {
@@ -42,9 +42,8 @@ service cloud.firestore {
     function isValidUserSettings(data) {
       return data.notificationsEnabled is bool &&
         data.advanceDays is number &&
-        data.currency is string &&
-        data.currency.size() <= 10 &&
-        data.email is string &&
+        data.currency is string && data.currency.size() <= 10 &&
+        data.email is string && data.email.size() <= 100 &&
         data.plan in ['basic', 'premium'] &&
         data.role in ['admin', 'user'] &&
         data.premiumStatus in ['none', 'pending', 'approved', 'rejected'] &&
@@ -52,57 +51,93 @@ service cloud.firestore {
         data.productCount is number;
     }
 
+    function hasAllUserSettingsKeys(data) {
+      return data.keys().hasAll(['notificationsEnabled', 'advanceDays', 'currency', 'email', 'plan', 'role', 'premiumStatus', 'productLimit', 'productCount']);
+    }
+
     function isValidProduct(data) {
-      return data.name is string && data.name.size() <= 100 &&
-        data.category is string &&
+      return data.keys().hasAll(['name', 'category', 'userId', 'expiryDate', 'createdAt', 'updatedAt']) &&
+        data.name is string && data.name.size() <= 100 &&
+        data.category is string && data.category.size() <= 50 &&
         data.userId == request.auth.uid &&
-        data.expiryDate is string;
+        data.expiryDate is string && data.expiryDate.size() <= 50;
+    }
+
+    function isValidCategory(data) {
+       return data.keys().hasAll(['name', 'userId', 'createdAt']) &&
+         data.name is string && data.name.size() <= 50 &&
+         data.userId == request.auth.uid;
     }
 
     function isValidPayment(data) {
-      return data.userId == request.auth.uid &&
+      return data.keys().hasAll(['userId', 'userEmail', 'status', 'referencia', 'createdAt']) &&
+        data.userId == request.auth.uid &&
         data.userEmail == request.auth.token.email &&
         data.status in ['pendente', 'aprovado', 'rejeitado'] &&
-        data.referencia is string;
+        data.referencia is string && data.referencia.size() <= 100;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'type', 'status', 'createdAt']) &&
+        data.userId is string &&
+        data.type is string &&
+        data.status in ['read', 'unread'];
     }
 
     // --- Matches ---
+    match /test/connection {
+      allow read: if true;
+    }
 
     // 1. User Email Index (used for uniqueness check)
     match /users/{email} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update, delete: if false; // Immutable index
+      // Hardened: only allow get for signed in users to check existence
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && incoming().uid == request.auth.uid;
+      allow update, delete: if false; 
     }
 
     // 2. User Settings
     match /userSettings/{userId} {
       allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
+      allow list: if isVerifiedAdmin();
       allow delete: if isVerifiedAdmin();
       
       allow create: if isOwner(userId) && 
         (incoming().role == 'user' || (incoming().role == 'admin' && request.auth.token.email == 'gabrielpe3109@gmail.com')) && 
         incoming().plan == 'basic' && 
         incoming().productLimit == 100 &&
+        incoming().productCount == 0 &&
         incoming().premiumStatus == 'none' &&
+        hasAllUserSettingsKeys(incoming()) &&
         isValidUserSettings(incoming());
         
       allow update: if (isOwner(userId) || isVerifiedAdmin()) && (
-        // Admin can change anything (for manual role/plan setting)
+        // Admin can change anything
         isVerifiedAdmin() || 
-        // Allow master admin email to promote itself during initialization if needed
+        // Allow master admin email to promote itself
         (isOwner(userId) && request.auth.token.email == 'gabrielpe3109@gmail.com') ||
-        // User can only change specific fields
+        // User Actions
         (
           isOwner(userId) && 
-          incoming().diff(existing()).affectedKeys().hasOnly(['notificationsEnabled', 'advanceDays', 'currency', 'photoURL', 'displayName', 'premiumStatus', 'productCount', 'updatedAt']) &&
-          // User CANNOT change their own role or plan or productLimit
-          incoming().role == existing().role &&
-          incoming().plan == existing().plan &&
-          incoming().productLimit == existing().productLimit &&
-          // User can only set premiumStatus to pending (if requesting)
-          (incoming().premiumStatus == existing().premiumStatus || incoming().premiumStatus == 'pending')
+          (
+            // Action: Update Profile/Settings
+            (incoming().diff(existing()).affectedKeys().hasOnly(['notificationsEnabled', 'advanceDays', 'currency', 'photoURL', 'displayName', 'updatedAt']) &&
+             (!incoming().keys().hasAny(['notificationsEnabled']) || incoming().notificationsEnabled is bool) &&
+             (!incoming().keys().hasAny(['advanceDays']) || incoming().advanceDays is number) &&
+             (!incoming().keys().hasAny(['currency']) || (incoming().currency is string && incoming().currency.size() <= 10)) &&
+             incoming().updatedAt == request.time) ||
+            // Action: Request Premium
+            (incoming().diff(existing()).affectedKeys().hasOnly(['premiumStatus', 'updatedAt']) && 
+             incoming().premiumStatus == 'pending' &&
+             existing().premiumStatus != 'approved' &&
+             incoming().updatedAt == request.time) ||
+            // Action: Product Count Sync (Client-side cache update)
+            (incoming().diff(existing()).affectedKeys().hasOnly(['productCount', 'updatedAt']) &&
+             incoming().productCount is number &&
+             incoming().productCount >= 0 &&
+             incoming().updatedAt == request.time)
+          )
         )
       );
     }
@@ -111,6 +146,7 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && isValidProduct(incoming()) && 
+        isValidId(productId) &&
         (isVerifiedAdmin() || get(/databases/$(database)/documents/userSettings/$(request.auth.uid)).data.productCount < get(/databases/$(database)/documents/userSettings/$(request.auth.uid)).data.productLimit);
       allow update: if (resource.data.userId == request.auth.uid || isVerifiedAdmin()) && isValidProduct(incoming());
       allow delete: if resource.data.userId == request.auth.uid || isVerifiedAdmin();
@@ -119,23 +155,25 @@ service cloud.firestore {
     // 4. Categories
     match /categories/{categoryId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow update: if (resource.data.userId == request.auth.uid || isVerifiedAdmin());
+      allow create: if isSignedIn() && isValidCategory(incoming()) && isValidId(categoryId);
+      allow update: if (resource.data.userId == request.auth.uid || isVerifiedAdmin()) && isValidCategory(incoming());
       allow delete: if (resource.data.userId == request.auth.uid || isVerifiedAdmin());
     }
 
     // 5. Payments
     match /payments/{paymentId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && incoming().status == 'pendente' && isValidPayment(incoming());
+      allow create: if isSignedIn() && incoming().status == 'pendente' && isValidPayment(incoming()) && isValidId(paymentId);
       allow update: if isVerifiedAdmin() && incoming().status in ['aprovado', 'rejeitado'];
       allow delete: if isVerifiedAdmin();
     }
 
     // 6. Notifications
     match /notifications/{notificationId} {
-      allow create: if isSignedIn();
-      allow read, update, delete: if isAdmin();
+      allow create: if isSignedIn() && isValidNotification(incoming()) && isValidId(notificationId);
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if (isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['status'])) || isVerifiedAdmin();
+      allow delete: if isVerifiedAdmin();
     }
   }
 }
