@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A food item or product with an expiration date",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the product" },
+        "expiryDate": { "type": "string", "format": "date-time", "description": "Expiration date" },
+        "category": { "type": "string", "description": "Product category" },
+        "price": { "type": "number", "description": "Price of the product" },
+        "observations": { "type": "string", "description": "Additional notes" },
+        "imageURL": { "type": "string", "description": "Base64 encoded image or URL" },
+        "userId": { "type": "string", "description": "ID of the user who owns the product" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "expiryDate", "category", "userId"]
+    },
+    "UserEmailIndex": {
+      "title": "UserEmailIndex",
+      "description": "Mapping from email to user UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User preferences and settings",
+      "type": "object",
+      "properties": {
+        "notificationsEnabled": { "type": "boolean" },
+        "advanceDays": { "type": "number" },
+        "currency": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "description": "User email indexed for unique check" },
+        "plan": { "type": "string", "enum": ["free", "premium"], "description": "User subscription plan" },
+        "productCount": { "type": "number", "description": "Current number of products (cached)" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["notificationsEnabled", "advanceDays", "currency", "email", "plan"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Custom category created by the user",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the category" },
+        "userId": { "type": "string", "description": "Owner of the category" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{email}": {
+      "schema": "UserEmailIndex",
+      "description": "Unique users by email for duplicate check"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Collection of products tracked by users"
+    },
+    "/userSettings/{userId}": {
+      "schema": "UserSettings",
+      "description": "User specific settings"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Custom user categories"
+    }
+  }
+}
