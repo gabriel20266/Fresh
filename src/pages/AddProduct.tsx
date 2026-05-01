@@ -67,7 +67,7 @@ export const AddProduct: React.FC = () => {
     e.preventDefault();
     if (!user || !formData.name || !formData.expiryDate) return;
 
-    const limit = settings.plan === 'premium' ? 500 : 100;
+    const limit = settings.plan === 'premium' ? 500 : 50;
     
     setLoading(true);
     try {

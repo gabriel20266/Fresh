@@ -11,11 +11,20 @@ export const Settings: React.FC = () => {
   const { user, logout, settings, updateSettings, updateProfileImage } = useAuth();
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [modal, setModal] = useState<{ type: 'clear' | 'backup' | 'success', message: string } | null>(null);
+  const [modal, setModal] = useState<{ type: 'clear' | 'backup' | 'success' | 'updating', message: string } | null>(null);
 
   const notificationsEnabled = settings.notificationsEnabled;
   const advanceDays = settings.advanceDays;
   const currentCurrency = settings.currency || 'BRL';
+
+  const handleUpdateApp = () => {
+    setModal({ type: 'updating', message: 'Sincronizando dados e otimizando o cache do sistema para melhor desempenho...' });
+    
+    // Simulate optimization/update process
+    setTimeout(() => {
+      window.location.reload();
+    }, 2500);
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -193,13 +202,13 @@ export const Settings: React.FC = () => {
             >
               <div className="w-14 h-14 rounded-full mx-auto flex items-center justify-center bg-surface-container-high">
                 {modal.type === 'clear' && <Trash2 className="w-7 h-7 text-error" />}
-                {modal.type === 'success' && <CheckCircle2 className="w-7 h-7 text-primary" />}
-                {modal.type === 'backup' && <CloudUpload className="w-7 h-7 text-primary" />}
+                {(modal.type === 'success' || modal.type === 'backup') && <CheckCircle2 className="w-7 h-7 text-primary" />}
+                {modal.type === 'updating' && <Loader2 className="w-7 h-7 text-primary animate-spin" />}
               </div>
               
               <div className="space-y-1">
                 <h3 className="text-xl font-bold text-on-surface">
-                  {modal.type === 'clear' ? 'Limpar?' : 'Concluído'}
+                  {modal.type === 'clear' ? 'Limpar?' : modal.type === 'updating' ? 'Atualizando' : 'Concluído'}
                 </h3>
                 <p className="text-sm text-on-surface-variant leading-relaxed">
                   {modal.message}
@@ -212,6 +221,15 @@ export const Settings: React.FC = () => {
                     <button onClick={handleClearHistory} className="w-full py-3.5 rounded-xl bg-error text-white font-bold text-sm hover:brightness-110 active:scale-[0.98] transition-all">Sim, Limpar Tudo</button>
                     <button onClick={() => setModal(null)} className="w-full py-3.5 rounded-xl border border-outline-variant font-bold text-sm hover:bg-surface-container-low active:scale-[0.98] transition-all">Cancelar</button>
                   </>
+                ) : modal.type === 'updating' ? (
+                  <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden mt-2">
+                    <motion.div 
+                      initial={{ width: "0%" }}
+                      animate={{ width: "100%" }}
+                      transition={{ duration: 2.5, ease: "easeInOut" }}
+                      className="h-full bg-primary"
+                    />
+                  </div>
                 ) : (
                   <button onClick={() => setModal(null)} className="w-full py-3.5 rounded-xl bg-primary text-on-primary font-bold text-sm hover:brightness-110 active:scale-[0.98] transition-all">Entendido</button>
                 )}
@@ -264,7 +282,12 @@ export const Settings: React.FC = () => {
               placeholder="Seu Nome"
               className="bg-transparent border-none text-xl font-bold leading-none p-0 focus:ring-0 w-full placeholder:text-white/40 text-white"
             />
-            <p className="text-sm opacity-80 font-medium">{user?.email}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-black bg-white/20 text-white px-2 py-0.5 rounded-full uppercase tracking-widest border border-white/20">
+                {settings.role === 'admin' ? 'Administrador' : settings.plan === 'premium' ? 'Plano Premium' : 'Plano Free'}
+              </span>
+              <p className="text-sm opacity-80 font-medium truncate max-w-[150px]">{user?.email}</p>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -375,23 +398,41 @@ export const Settings: React.FC = () => {
           
           <div className="p-5 pt-0 space-y-4">
             <div className="h-px bg-outline-variant/10 w-full" />
-            <h3 className="text-sm font-bold text-on-surface">Antecedência avisada</h3>
-            <div className="grid grid-cols-4 gap-2">
-              {[1, 5, 7, 31].map((days) => (
-                <button 
-                  key={days}
-                  onClick={() => handleSetDays(days)}
-                  className={cn(
-                    "flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all active:scale-95",
-                    advanceDays === days 
-                      ? "border-2 border-primary bg-primary/5 shadow-inner" 
-                      : "border-outline-variant/30 bg-white hover:border-primary opacity-60"
-                  )}
-                >
-                  <span className={cn("text-base font-bold", advanceDays === days ? "text-primary" : "text-on-surface")}>{days}</span>
-                  <span className={cn("text-[9px] font-bold uppercase tracking-wider", advanceDays === days ? "text-primary" : "text-outline")}>DIAS</span>
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-bold text-on-surface">Antecedência avisada</h3>
+              <span className="text-sm font-black text-primary bg-primary/10 px-3 py-1 rounded-full">
+                {advanceDays} {advanceDays === 1 ? 'dia' : 'dias'}
+              </span>
+            </div>
+            
+            <div className="space-y-6">
+              <input 
+                type="range" 
+                min="1" 
+                max="30" 
+                step="1"
+                value={advanceDays}
+                onChange={(e) => handleSetDays(parseInt(e.target.value))}
+                className="w-full h-2 bg-surface-container-highest rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+              
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 3, 7, 15].map((days) => (
+                  <button 
+                    key={days}
+                    onClick={() => handleSetDays(days)}
+                    className={cn(
+                      "flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all active:scale-95",
+                      advanceDays === days 
+                        ? "border-2 border-primary bg-primary/5 shadow-inner" 
+                        : "border-outline-variant/30 bg-white hover:border-primary opacity-60"
+                    )}
+                  >
+                    <span className={cn("text-base font-bold", advanceDays === days ? "text-primary" : "text-on-surface")}>{days}</span>
+                    <span className={cn("text-[9px] font-bold uppercase tracking-wider", advanceDays === days ? "text-primary" : "text-outline")}>DIAS</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -511,8 +552,17 @@ export const Settings: React.FC = () => {
         </div>
         <div className="bg-white rounded-2xl border border-outline-variant/30 p-5 space-y-5 shadow-sm">
           <div className="flex justify-between items-center">
-            <span className="text-base font-bold text-on-surface">Versão</span>
-             <span className="text-[10px] font-bold bg-surface-container-highest px-3 py-1.5 rounded-full text-outline tracking-wider">2.4.0 (BUILD 82)</span>
+            <div className="space-y-0.5">
+              <span className="text-base font-bold text-on-surface block">Sistema</span>
+              <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Versão 2.4.0 (BUILD 82)</span>
+            </div>
+            <button 
+              onClick={handleUpdateApp}
+              className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Atualizar App
+            </button>
           </div>
           <button 
             onClick={logout}

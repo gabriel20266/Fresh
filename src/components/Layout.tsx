@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { Home, PlusSquare, Settings, ChevronLeft, User as UserIcon, Calendar, LayoutGrid } from 'lucide-react';
+import { Home, PlusSquare, Settings, ChevronLeft, User as UserIcon, Calendar, LayoutGrid, ShieldCheck } from 'lucide-react';
 import { useAuth } from './FirebaseProvider';
 import { cn } from '../lib/utils';
 
@@ -12,7 +12,7 @@ export const Layout: React.FC = () => {
   const isSubPage = location.pathname.startsWith('/product/') || location.pathname === '/add' || location.pathname === '/calendar' || location.pathname === '/settings';
   const pageTitle = {
     '/': 'Meus Produtos',
-    '/admin': 'Administração',
+    '/admin': settings.role === 'admin' ? 'Sistema Admin' : 'Administração',
     '/add': 'Novo Produto',
     '/calendar': 'Calendário',
     '/settings': 'Configurações',
@@ -40,19 +40,20 @@ export const Layout: React.FC = () => {
             </h1>
           </div>
           
-          {user && (
-            <div className="w-8 h-8 rounded-xl overflow-hidden border border-primary/10 shadow-sm bg-primary/5 flex items-center justify-center">
-              {settings.photoURL || user.photoURL ? (
-                <img 
-                  src={settings.photoURL || user.photoURL || ''} 
-                  alt="Profile" 
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <UserIcon className="w-4 h-4 text-primary/40" />
-              )}
+          <div className="flex items-center gap-3">
+            {settings.role === 'admin' && (
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary rounded-full border border-primary/20">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary">Admin Console</span>
+              </div>
+            )}
+            <div className="flex flex-col items-end">
+              <span className="text-sm font-bold text-on-surface leading-none">{user?.displayName || user?.email?.split('@')[0]}</span>
+              <span className="text-[9px] font-black text-outline uppercase tracking-widest mt-1">
+                {settings.role === 'admin' ? 'Administrador' : settings.plan === 'premium' ? 'Plano Premium' : 'Plano Free'}
+              </span>
             </div>
-          )}
+          </div>
         </div>
       </header>
 
@@ -120,8 +121,12 @@ export const Layout: React.FC = () => {
           >
             {({ isActive }) => (
               <>
-                <LayoutGrid className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Painel</span>
+                {settings.role === 'admin' ? (
+                  <ShieldCheck className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                ) : (
+                  <LayoutGrid className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                )}
+                <span className="text-[10px] font-bold uppercase tracking-wider">{settings.role === 'admin' ? 'Admin' : 'Painel'}</span>
               </>
             )}
           </NavLink>

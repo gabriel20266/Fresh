@@ -22,7 +22,7 @@ const DEFAULT_CATEGORY_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const Home: React.FC = () => {
-  const { user, settings } = useAuth();
+  const { user, settings, isAdmin, requestPremium } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'Todos' | 'Próximos' | 'Vencidos'>('Todos');
@@ -32,11 +32,13 @@ export const Home: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'products'),
-      where('userId', '==', user.uid),
-      orderBy('expiryDate', 'asc')
-    );
+    const q = isAdmin 
+      ? query(collection(db, 'products'), orderBy('expiryDate', 'asc'))
+      : query(
+          collection(db, 'products'),
+          where('userId', '==', user.uid),
+          orderBy('expiryDate', 'asc')
+        );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
@@ -46,11 +48,17 @@ export const Home: React.FC = () => {
     });
 
     return unsubscribe;
-  }, [user]);
+  }, [user, isAdmin]);
 
   const advanceDays = settings.advanceDays;
-  const productLimit = settings.plan === 'premium' ? 500 : 100;
+  const productLimit = settings.plan === 'premium' ? 500 : 50;
   const usagePercentage = Math.min(100, (products.length / productLimit) * 100);
+  const [requestSent, setRequestSent] = useState(false);
+
+  const handleRequestPremium = async () => {
+    await requestPremium();
+    setRequestSent(true);
+  };
 
   const stats = {
     total: products.length,
@@ -297,6 +305,50 @@ export const Home: React.FC = () => {
         )}
       </div>
 
+      {/* Premium Upgrade Banner */}
+      {settings.plan === 'free' && !isAdmin && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white border border-secondary shadow-lg shadow-secondary/5 p-6 rounded-3xl overflow-hidden relative"
+        >
+          <div className="absolute top-0 right-0 p-3">
+             <div className="bg-secondary/10 text-secondary text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border border-secondary/20">
+               Recomendado
+             </div>
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-6 items-center">
+            <div className="w-16 h-16 bg-secondary/10 rounded-2xl flex items-center justify-center shrink-0">
+               <Package className="w-8 h-8 text-secondary" />
+            </div>
+            
+            <div className="flex-1 text-center md:text-left space-y-1">
+              <h3 className="text-lg font-black text-on-surface">Plano Premium</h3>
+              <p className="text-xs text-outline leading-relaxed max-w-sm">
+                Aumente seu limite para <span className="font-bold text-secondary">500 produtos</span> e tenha uma gestão profissional do seu estoque.
+              </p>
+            </div>
+
+            <div className="shrink-0 w-full md:w-auto">
+              {settings.premiumStatus === 'pending' || requestSent ? (
+                <div className="px-6 py-3 bg-surface-container-high text-outline rounded-xl font-bold text-sm text-center border border-outline-variant/30 flex items-center justify-center gap-2">
+                  <Package className="w-4 h-4" />
+                  Solicitação Pendente
+                </div>
+              ) : (
+                <button 
+                  onClick={handleRequestPremium}
+                  className="w-full md:w-auto px-8 py-3 bg-secondary text-white rounded-xl font-black text-sm uppercase tracking-widest shadow-xl shadow-secondary/20 active:scale-95 transition-all text-center"
+                >
+                  Solicitar Upgrade
+                </button>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Strategy/Tip Card */}
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
@@ -323,6 +375,17 @@ export const Home: React.FC = () => {
              <Salad className="w-48 h-48" />
         </div>
       </motion.div>
+
+      {/* Floating Action Button (FAB) */}
+      <motion.button
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 0.5, type: 'spring' }}
+        onClick={() => navigate('/add')}
+        className="fixed bottom-28 right-6 w-14 h-14 bg-primary text-white rounded-2xl shadow-xl shadow-primary/30 flex items-center justify-center active:scale-95 transition-all z-40 md:hidden"
+      >
+        <Plus className="w-6 h-6 stroke-[3]" />
+      </motion.button>
     </div>
   );
 };

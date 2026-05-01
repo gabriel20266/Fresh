@@ -28,13 +28,14 @@ import { useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../lib/format';
 
 export const Admin: React.FC = () => {
-  const { user, settings } = useAuth();
+  const { user, settings, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<UserCategory[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'products' | 'categories'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'system'>('products');
   const [sortBy, setSortBy] = useState<'expiryDate' | 'name' | 'price' | 'createdAt'>('expiryDate');
 
   const [newCatName, setNewCatName] = useState('');
@@ -43,8 +44,11 @@ export const Admin: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    // Listen to products
-    const qProducts = query(collection(db, 'products'), where('userId', '==', user.uid));
+    // Listen to personal products
+    const qProducts = isAdmin 
+      ? collection(db, 'products') 
+      : query(collection(db, 'products'), where('userId', '==', user.uid));
+      
     const unsubscribeProducts = onSnapshot(qProducts, (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
       setLoading(false);
@@ -53,19 +57,57 @@ export const Admin: React.FC = () => {
       setLoading(false);
     });
 
-    // Listen to categories
-    const qCategories = query(collection(db, 'categories'), where('userId', '==', user.uid));
+    // Listen to personal categories
+    const qCategories = isAdmin
+      ? collection(db, 'categories')
+      : query(collection(db, 'categories'), where('userId', '==', user.uid));
+      
     const unsubscribeCategories = onSnapshot(qCategories, (snapshot) => {
       setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserCategory)));
     }, (error) => {
        handleFirestoreError(error, OperationType.GET, 'categories');
     });
 
+    // If admin, listen to all users
+    let unsubscribeUsers = () => {};
+    if (isAdmin) {
+      const qUsers = collection(db, 'userSettings');
+      unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
+        setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+    }
+
     return () => {
       unsubscribeProducts();
       unsubscribeCategories();
+      unsubscribeUsers();
     };
-  }, [user]);
+  }, [user, isAdmin]);
+
+  const handleApprovePremium = async (userId: string) => {
+    try {
+      const { updateDoc, doc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'userSettings', userId), {
+        plan: 'premium',
+        premiumStatus: 'approved',
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `userSettings/${userId}`);
+    }
+  };
+
+  const handleRejectPremium = async (userId: string) => {
+    try {
+      const { updateDoc, doc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'userSettings', userId), {
+        premiumStatus: 'none',
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `userSettings/${userId}`);
+    }
+  };
 
   const handleCreateCategory = async () => {
     if (!newCatName.trim() || !user) return;
@@ -150,11 +192,14 @@ export const Admin: React.FC = () => {
       {/* Search and Tabs */}
       <div className="space-y-4">
         {/* Tabs */}
-        <div className="flex bg-surface-container-high p-1 rounded-2xl w-full max-w-xs mx-auto">
+        <div className={cn(
+          "flex bg-surface-container-high p-1 rounded-2xl w-full mx-auto",
+          isAdmin ? "max-w-sm" : "max-w-xs"
+        )}>
           <button 
             onClick={() => setActiveTab('products')}
             className={cn(
-              "flex-1 py-2 text-xs font-bold rounded-xl transition-all",
+              "flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all",
               activeTab === 'products' ? "bg-white shadow-sm text-primary" : "text-outline"
             )}
           >
@@ -163,13 +208,36 @@ export const Admin: React.FC = () => {
           <button 
             onClick={() => setActiveTab('categories')}
             className={cn(
-              "flex-1 py-2 text-xs font-bold rounded-xl transition-all",
+              "flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all",
               activeTab === 'categories' ? "bg-white shadow-sm text-primary" : "text-outline"
             )}
           >
             Categorias
           </button>
+          {isAdmin && (
+            <button 
+              onClick={() => setActiveTab('system')}
+              className={cn(
+                "flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all",
+                activeTab === 'system' ? "bg-white shadow-sm text-primary" : "text-outline"
+              )}
+            >
+              Sistema
+            </button>
+          )}
         </div>
+        
+        {activeTab === 'products' && (
+          <div className="flex justify-center">
+            <button 
+              onClick={() => navigate('/add')}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-md shadow-primary/20"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Novo Produto
+            </button>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -231,7 +299,7 @@ export const Admin: React.FC = () => {
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-outline w-4 h-4" />
               <input 
                 type="text" 
-                placeholder="Pesquisar estoque..." 
+                placeholder={isAdmin ? "Pesquisar em todo o estoque..." : "Pesquisar estoque..."}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-outline-variant/30 bg-white text-sm focus:ring-2 focus:ring-primary outline-none transition-all placeholder:text-outline/40"
@@ -263,6 +331,7 @@ export const Admin: React.FC = () => {
             ) : (
               filteredProducts.map((product) => {
                 const status = getStatus(product.expiryDate);
+                const owner = allUsers.find(u => u.id === product.userId);
                 return (
                   <motion.div 
                     layout
@@ -293,10 +362,10 @@ export const Admin: React.FC = () => {
                           <Calendar className="w-2.5 h-2.5" />
                           {format(parseISO(product.expiryDate), 'dd/MM/yy')}
                         </span>
-                        {product.price && (
-                          <span className="flex items-center gap-1 text-primary">
-                            <ArrowUpDown className="w-2.5 h-2.5" />
-                            {formatCurrency(product.price, settings.currency || 'BRL')}
+                        {isAdmin && owner && (
+                          <span className="flex items-center gap-1 truncate max-w-[80px]">
+                            <Plus className="w-2.5 h-2.5" />
+                            {owner.displayName || owner.email?.split('@')[0]}
                           </span>
                         )}
                       </div>
@@ -336,11 +405,11 @@ export const Admin: React.FC = () => {
             )}
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'categories' ? (
         <div className="space-y-4">
           <div className="bg-white p-6 rounded-3xl border border-outline-variant/20 shadow-sm space-y-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-on-surface">Minhas Categorias</h2>
+              <h2 className="text-lg font-bold text-on-surface">Categorias</h2>
               {!isAddingCat && (
                 <button 
                   onClick={() => setIsAddingCat(true)}
@@ -394,46 +463,142 @@ export const Admin: React.FC = () => {
             <div className="grid grid-cols-1 gap-2">
               {categories.length === 0 ? (
                 <div className="p-8 text-center bg-surface-container-low rounded-2xl border border-dashed border-outline-variant/50">
-                  <p className="text-xs text-outline italic">Você ainda não criou categorias personalizadas</p>
+                  <p className="text-xs text-outline italic">Nenhuma categoria encontrada</p>
                 </div>
               ) : (
                 categories.map((cat) => (
                   <div key={cat.id} className="flex items-center justify-between p-3 pl-4 bg-surface-container-low rounded-2xl group hover:bg-white transition-all border border-transparent hover:border-outline-variant/30">
                     <div className="flex items-center gap-3">
                       <div className="w-2 h-2 rounded-full bg-primary/40"></div>
-                      <span className="font-bold text-sm text-on-surface">{cat.name}</span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-sm text-on-surface">{cat.name}</span>
+                        {isAdmin && (
+                          <span className="text-[8px] text-outline uppercase tracking-wider">
+                            UID: {cat.userId.substring(0, 8)}...
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[9px] font-bold text-outline uppercase tracking-widest bg-white px-2 py-0.5 rounded-full border border-outline-variant/20">
                         {products.filter(p => p.category === cat.name).length} itens
                       </span>
                     </div>
-                    <button 
-                      onClick={() => {
-                        setDeleteId(cat.id);
-                        setDeleteType('category');
-                      }}
-                      className={cn(
-                        "p-2 rounded-xl transition-all active:scale-90",
-                        deleteId === cat.id ? "bg-error text-white" : "text-outline hover:text-error hover:bg-error/10"
-                      )}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {(isAdmin || cat.userId === user?.uid) && (
+                      <button 
+                        onClick={() => {
+                          setDeleteId(cat.id);
+                          setDeleteType('category');
+                        }}
+                        className={cn(
+                          "p-2 rounded-xl transition-all active:scale-90",
+                          deleteId === cat.id ? "bg-error text-white" : "text-outline hover:text-error hover:bg-error/10"
+                        )}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-primary p-5 rounded-3xl text-white shadow-lg shadow-primary/20">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Total Usuários</span>
+              <div className="text-3xl font-black mt-1">{allUsers.length}</div>
+            </div>
+            <div className="bg-white p-5 rounded-3xl border border-outline-variant/20 shadow-sm">
+              <span className="text-[10px] font-black uppercase tracking-widest text-outline">Premium Ativos</span>
+              <div className="text-3xl font-black mt-1 text-on-surface">
+                {allUsers.filter(u => u.plan === 'premium').length}
+              </div>
+            </div>
+          </div>
+
+          {/* Premium Requests */}
+          <div className="bg-white p-6 rounded-3xl border border-outline-variant/20 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-5 h-5 text-secondary" />
+              <h2 className="text-lg font-bold text-on-surface">Solicitações Premium</h2>
+            </div>
+
+            <div className="space-y-3">
+              {allUsers.filter(u => u.premiumStatus === 'pending').length === 0 ? (
+                <div className="py-6 text-center text-outline text-xs italic bg-surface-container-low rounded-2xl border border-dashed border-outline-variant/50">
+                  Nenhuma solicitação pendente no momento
+                </div>
+              ) : (
+                allUsers.filter(u => u.premiumStatus === 'pending').map((u) => (
+                  <div key={u.id} className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-sm font-bold text-on-surface block">{u.displayName || 'Usuário Sem Nome'}</span>
+                        <span className="text-[10px] text-outline">{u.email}</span>
+                      </div>
+                      <div className="text-[9px] font-black bg-secondary/10 text-secondary px-2 py-1 rounded-full uppercase tracking-widest">
+                        PENDENTE
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleApprovePremium(u.id)}
+                        className="flex-1 py-2 px-4 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm active:scale-95 transition-all"
+                      >
+                        Aprovar Plano
+                      </button>
+                      <button 
+                        onClick={() => handleRejectPremium(u.id)}
+                        className="py-2 px-4 bg-surface-container-high text-on-surface rounded-xl text-[10px] font-black uppercase tracking-widest border border-outline-variant/20 active:scale-95 transition-all"
+                      >
+                        Recusar
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          <div className="bg-surface-container-high p-5 rounded-3xl border border-outline-variant/10 flex items-start gap-4">
-            <div className="p-2 bg-white rounded-xl shadow-sm text-primary">
-              <AlertCircle className="w-5 h-5" />
+          {/* All Users List */}
+          <div className="bg-white p-6 rounded-3xl border border-outline-variant/20 shadow-sm space-y-4">
+            <h2 className="text-lg font-bold text-on-surface mb-2">Gerenciar Usuários</h2>
+            <div className="space-y-2">
+              {allUsers.map((u) => (
+                <div key={u.id} className="flex items-center justify-between p-3 bg-surface-container-low rounded-2xl">
+                  <div className="flex flex-col min-w-0 pr-2">
+                    <span className="text-xs font-bold text-on-surface truncate">{u.displayName || u.email?.split('@')[0]}</span>
+                    <span className="text-[9px] text-outline uppercase tracking-widest font-bold">
+                      {u.role === 'admin' ? 'Administrador' : u.plan === 'premium' ? 'Cliente Premium' : 'Cliente Free'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[9px] font-black bg-white border border-outline-variant/30 px-2.5 py-1 rounded-full text-outline">
+                      {u.productCount || 0} ITENS
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-bold text-on-surface">Informação</h4>
-              <p className="text-xs text-outline leading-relaxed">
-                Você pode criar categorias específicas no momento de adicionar ou editar um produto. A exclusão de uma categoria só é permitida quando não houver produtos vinculados a ela.
-              </p>
-            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab !== 'system' && (
+        <div className="bg-surface-container-high p-5 rounded-3xl border border-outline-variant/10 flex items-start gap-4">
+          <div className="p-2 bg-white rounded-xl shadow-sm text-primary">
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-bold text-on-surface">Informação</h4>
+            <p className="text-xs text-outline leading-relaxed">
+              {isAdmin 
+                ? "Como administrador, você visualiza e gerencia todos os produtos e categorias de todos os usuários do sistema."
+                : "As categorias devem ser criadas aqui no Painel administrativo para serem utilizadas no cadastro de produtos. A exclusão de uma categoria só é permitida quando não houver produtos vinculados a ela."
+              }
+            </p>
           </div>
         </div>
       )}

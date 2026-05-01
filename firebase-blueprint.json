@@ -38,11 +38,13 @@
         "photoURL": { "type": "string" },
         "displayName": { "type": "string" },
         "email": { "type": "string", "description": "User email indexed for unique check" },
+        "role": { "type": "string", "enum": ["admin", "client"] },
         "plan": { "type": "string", "enum": ["free", "premium"], "description": "User subscription plan" },
+        "premiumStatus": { "type": "string", "enum": ["none", "pending", "approved"] },
         "productCount": { "type": "number", "description": "Current number of products (cached)" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["notificationsEnabled", "advanceDays", "currency", "email", "plan"]
+      "required": ["notificationsEnabled", "advanceDays", "currency", "email", "plan", "role", "premiumStatus"]
     },
     "Category": {
       "title": "Category",

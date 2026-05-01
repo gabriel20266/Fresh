@@ -23,7 +23,9 @@ interface UserSettings {
   photoURL?: string;
   displayName?: string;
   email?: string;
+  role: 'admin' | 'client';
   plan: 'free' | 'premium';
+  premiumStatus: 'none' | 'pending' | 'approved';
   productCount: number;
 }
 
@@ -31,6 +33,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   settings: UserSettings;
+  isAdmin: boolean;
   signInWithGoogle: (useRedirect?: boolean) => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string, name: string) => Promise<void>;
@@ -38,6 +41,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
   updateProfileImage: (photoURL: string) => Promise<void>;
+  requestPremium: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,9 +53,13 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     notificationsEnabled: true, 
     advanceDays: 3,
     currency: 'BRL',
+    role: 'client',
     plan: 'free',
+    premiumStatus: 'none',
     productCount: 0
   });
+
+  const isAdmin = settings.role === 'admin';
 
   useEffect(() => {
     const initAuth = async () => {
@@ -66,20 +74,35 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setUser(authUser);
           // Carregar configurações do banco
           try {
-            const { doc, getDoc } = await import('firebase/firestore');
+            const { doc, getDoc, setDoc } = await import('firebase/firestore');
             const { db } = await import('../lib/firebase');
             const docRef = doc(db, 'userSettings', authUser.uid);
             const docSnap = await getDoc(docRef);
+            
             if (docSnap.exists()) {
               const data = docSnap.data();
               setSettings(prev => ({
                 ...prev,
                 ...data
               }) as UserSettings);
+            } else {
+              // Initialize settings if first time
+              const initialSettings: UserSettings = {
+                notificationsEnabled: true,
+                advanceDays: 3,
+                currency: 'BRL',
+                role: authUser.email === 'gabrielpe3109@gmail.com' ? 'admin' : 'client',
+                plan: 'free',
+                premiumStatus: 'none',
+                productCount: 0,
+                email: authUser.email || '',
+                displayName: authUser.displayName || ''
+              };
+              await setDoc(docRef, { ...initialSettings, updatedAt: new Date().toISOString() });
+              setSettings(initialSettings);
             }
           } catch (err) {
             console.error("Error loading settings:", err);
-            // Non-critical, just use defaults
           }
         } else {
           setUser(null);
@@ -87,7 +110,9 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             notificationsEnabled: true, 
             advanceDays: 3,
             currency: 'BRL',
+            role: 'client',
             plan: 'free',
+            premiumStatus: 'none',
             productCount: 0
           });
         }
@@ -98,11 +123,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const cleanupPromise = initAuth();
-
-    // Verificar se voltamos de um redirecionamento de login
-    getRedirectResult(auth).catch((error) => {
-      console.error("Erro no redirecionamento:", error);
-    });
 
     return () => {
       cleanupPromise.then(unsubscribe => typeof unsubscribe === 'function' && unsubscribe());
@@ -122,6 +142,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `userSettings/${user.uid}`);
     }
+  };
+
+  const requestPremium = async () => {
+    if (!user) return;
+    await updateSettings({ premiumStatus: 'pending' });
   };
 
   const updateProfileImage = async (photoURL: string) => {
@@ -209,7 +234,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, settings, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword, logout, updateSettings, updateProfileImage }}>
+    <AuthContext.Provider value={{ user, loading, settings, isAdmin, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword, logout, updateSettings, updateProfileImage, requestPremium }}>
       {!loading && children}
     </AuthContext.Provider>
   );

@@ -45,12 +45,18 @@ service cloud.firestore {
         && data.userId == request.auth.uid;
     }
 
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/userSettings/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // UserSettings validation
     function isValidUserSettings(data) {
       return data.notificationsEnabled is bool
         && (data.advanceDays is int || data.advanceDays is float)
         && data.currency is string && data.currency.size() <= 10
+        && data.role in ['admin', 'client']
         && data.plan in ['free', 'premium']
+        && data.premiumStatus in ['none', 'pending', 'approved']
         && (!('productCount' in data) || (data.productCount is int || data.productCount is float))
         && (!('email' in data) || (data.email is string && data.email.size() <= 200))
         && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1048576))
@@ -61,11 +67,11 @@ service cloud.firestore {
     match /users/{email} {
       allow get: if true; 
       allow create: if isSignedIn() && request.auth.token.email.lower() == email.lower();
+      allow list: if isAdmin();
     }
 
     match /products/{productId} {
-      allow get: if isSignedIn() && isOwner(existing().userId);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
       
       allow create: if isSignedIn() 
         && isValidId(productId)
@@ -74,19 +80,34 @@ service cloud.firestore {
         && incoming().keys().hasAll(['name', 'expiryDate', 'category', 'userId', 'createdAt', 'updatedAt']);
         
       allow update: if isSignedIn()
-        && isOwner(existing().userId)
+        && (isOwner(existing().userId) || isAdmin())
         && isValidProduct(incoming())
         && incoming().userId == existing().userId
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'expiryDate', 'category', 'price', 'observations', 'imageURL', 'updatedAt']);
+        && (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'expiryDate', 'category', 'price', 'observations', 'imageURL', 'updatedAt']));
         
-      allow delete: if isSignedIn() && isOwner(existing().userId);
+      allow delete: if isSignedIn() && (isOwner(existing().userId) || isAdmin());
     }
 
     match /userSettings/{userId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow write: if isSignedIn() && isOwner(userId) && isValidUserSettings(incoming());
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() && isOwner(userId) && isValidUserSettings(incoming())
+        && (incoming().role == 'client' || request.auth.token.email == 'gabrielpe3109@gmail.com')
+        && (incoming().plan == 'free')
+        && (incoming().premiumStatus == 'none');
+        
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin()) && isValidUserSettings(incoming())
+        && (
+          isAdmin() || (
+            isOwner(userId) 
+            && incoming().role == existing().role 
+            && incoming().plan == existing().plan
+            && (incoming().premiumStatus == existing().premiumStatus || (existing().premiumStatus == 'none' && incoming().premiumStatus == 'pending'))
+          )
+        );
     }
 
     match /categories/{categoryId} {
